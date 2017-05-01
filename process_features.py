@@ -11,12 +11,10 @@ import pandas
 def strip_punctuation(s):
     return ''.join(c for c in s if c not in punctuation)
 
-
 def jaccard_similarity(feature1, feature2):
     feat1 = set(feature1.split(" "))
     feat2 = set(feature2.split(" "))
     return len(feat1.intersection(feat2)) / len(feat1.union(feat2))
-
 
 def rental_terms():
     amenities = ['yoga', 'gym', 'pilates', 'fitness', 'spa', 'dance', 'exercise', 'aerobic', 'cardio', 'elevator',
@@ -62,7 +60,6 @@ def rental_terms():
             'architecture': architecture, 'utilities': utilities, 'privacy': privacy, 'pet': pet, 'order':
                 ['amenities', 'transport', 'proximity', 'utilities', 'rental', 'architecture', 'age', 'privacy', 'pet'],
             'feature': utilities + transport + proximity + amenities + age + rental + architecture + spatial + privacy + pet}
-
 
 def preprocess_features(feat):
     feature = [j.lower() for j in feat]
@@ -137,16 +134,9 @@ def terms(new_feat, all_feat):
         if feat_grp in all_rental_feat.keys():
             similar_feat[feat_grp][all_rental_feat[feat_grp]] = 1
 
-    """
-    terms_common = rental_terms()['feature']
-
-    for k in features_found.keys():
-        features_found[k]['points'] = sum([_ for _ in terms_common if _ in k])
-
     for k in sorted(similar_feat.keys()):
         print("{:<30} {:<60} {}".format(k, str(similar_feat[k]['total']), similar_feat[k]))
     print(len(features_found))
-    """
 
     new_feat_dictionary = {i: {'total': similar_feat[i]['total'], 'related': similar_feat[i]} for i in
                            similar_feat.keys()}
@@ -167,12 +157,13 @@ def term_freq_class(samples, rate, key_terms):
     max_feat = dict.fromkeys(key_terms, 0)
 
     for i in range(0, len(samples), rate):
+        print("Processing features")
         sample = samples[i: i + rate]
         all_feat = reduce(lambda b, c: b + c, sample["features"], [])
         x = terms([], Counter(all_feat))
         max_feat = {feat: max([x[feat]['total'], max_feat[feat]]) if feat in x.keys() else max_feat[feat] for feat in
                     max_feat.keys()}
-    max_feat = {feat: max_feat[feat] / rate for feat in max_feat.keys()}
+    #max_feat = {feat: max_feat[feat] / rate for feat in max_feat.keys()}
     return max_feat
 
 
@@ -181,3 +172,40 @@ def attr_pts_high_med_low(term_freq_high, term_freq_medium, term_freq_low):
     feature_hml['max'] = feature_hml.max(axis=1)
     feature_hml['maxclass'] = feature_hml.idxmax(axis=1)
     return feature_hml
+
+
+def feat_liklihood(feature, samples, intrst_lvl):
+    feat = Counter(samples[feature])
+    feat_prior = {i: feat[i] / len(samples) for i in feat.keys()}
+
+    intrst_lvl_feat = Counter([j for j in list(zip(samples.interest_level, samples[feature]))])
+    intrst_lvl_feat_prior = {i: intrst_lvl_feat[i] / len(samples) for i in intrst_lvl_feat.keys()}
+
+    max_feat_post = dict.fromkeys(intrst_lvl_feat.keys(), int)
+    dict_int_lvl = dict.fromkeys(intrst_lvl_feat.keys(), dict.fromkeys(intrst_lvl.keys()))
+
+    for sample in samples.index:
+        dict_int_lvl[sample] = {int_lvl: intrst_lvl_feat_prior[(int_lvl, samples[feature][sample])] /
+                                feat_prior[samples[feature][sample]]
+        if (int_lvl, samples[feature][sample]) in intrst_lvl_feat_prior.keys()
+        else 0 for int_lvl in intrst_lvl.keys()}
+
+    dict_int_lvl = pandas.DataFrame(dict_int_lvl)
+
+    max_feat_post = pandas.DataFrame()
+    max_feat_post['max'] = dict_int_lvl.max(axis=0)
+    max_feat_post['maxclass'] = dict_int_lvl.idxmax(axis=0)
+    max_feat_post = max_feat_post.ix[samples.index]
+    #max_feat_post['max'] = (max_feat_post['max']) / (max_feat_post['max'].max() - max_feat_post['max'].min())
+    max_feat_post[str(feature)+'max'] = list(zip(max_feat_post['maxclass'], max_feat_post['max']))
+    return [max_feat_post, feat_prior, intrst_lvl_feat_prior, dict_int_lvl]
+
+def feat_posterior(t_samples, feature, feat_prior, intrst_lvl_feat_prior, intrst_lvl):
+    t_result = dict.fromkeys(t_samples.index, int)
+
+    for sample in t_samples.index:
+        t_result[sample] = {int_lvl: intrst_lvl_feat_prior[(int_lvl, t_samples[feature][sample])] /
+                                     feat_prior[t_samples[feature][sample]]
+                                    if (int_lvl, t_samples[feature][sample]) in intrst_lvl_feat_prior.keys() else 0
+                            for int_lvl in intrst_lvl.keys()}
+    return pandas.DataFrame(t_result).transpose()
